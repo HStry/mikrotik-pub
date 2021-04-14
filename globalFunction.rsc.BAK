@@ -1,0 +1,234 @@
+:global ternary do={
+# function simulating ternary operator
+  :if ($1) do={
+    :return $2;
+  } else={
+    :return $3;
+  };
+};
+
+:global inStr do={
+  :local string $1;
+  :local match $2;
+  
+  :local s [:len $string];
+  :local m [:len $match];
+  :local n ($s - $m);
+  
+  :local snip;
+  :local found false;
+  :local i (0);
+  
+  :while ((!$found) and ($i <= $n)) do={
+    :set snip [:pick $string $i ($i + $m)];
+    :if ($snip = $match) do={
+      :set found true;
+    };
+    :set i ($i + (1));
+  };
+  
+  :return $found;
+};
+
+:global countInStr do={
+  :local string $1;
+  :local match $2;
+  :local overlap ($3 = true);
+  
+  :local s [:len $string];
+  :local m [:len $match];
+  :local n ($s - $m);
+  :local j [$ternary $overlap (1) $m];
+  
+  :local snip;
+  :local found 0;
+  :local i 0;
+  
+  :while ($i <= $n) do={
+    :set snip [:pick $string $i ($i + $m)];
+    :if ($snip = $match) do={
+      :set found ($found + (1));
+      :set i ($i + $j);
+    } else={
+      :set i ($i + (1));
+    };
+  };
+  
+  :return $found;
+};
+
+:global findInStr do={
+  :local string $1;
+  :local match $2;
+  :local overlap ($3 = true);
+  
+  :local s [:len $string];
+  :local m [:len $match];
+  :local n ($s - $m);
+  :local j [$ternary $overlap (1) $m];
+  
+  :local snip;
+  :local found;
+  :local i 0;
+  
+  :while ($i <= $n) do={
+    :set snip [:pick $string $i ($i + $m)];
+    :if ($snip = $match) do={
+      :set found ($found, {$i});
+      :set i ($i + $j);
+    } else={
+      :set i ($i + (1));
+    };
+  };
+  
+  :return $found;
+};
+
+# TODO:
+# Regex variants for above
+# :global reCountInStr do={};
+# :global reFindInStr do={};
+
+# === old code ===
+# 
+# :global findInStr do={
+#   :local string $1;
+#   :local match $2;
+#   :local overlap $3;
+#   :if (!($overlap=true)) do={:set overlap false;};
+#   
+#   :local matches;
+#   :local leftbound false;
+#   :local rightbound false;
+#   :if ([:pick $match 0 1]="^") do={:set leftbound true;};
+#   :if ([:pick $match ([:len $match] - 1) [:len $match]]="\$") do={:set rightbound true;};
+#   :if (!$leftbound) do={:set match ("^" . $match)};
+#   :if (!$rightbound) do={:set match ($match . "\$")};
+#   
+#   :if ($leftbound and $rightbound) do={
+#     :if ($string~$match) do={:set matches {{0; [:len $string]}};};
+#   } else={
+#     :if ($leftbound or $rightbound) do={
+#       :local i 0;
+#       :local j [:len $string];
+#       :local continue true;
+#       :while ($continue and $i < $j) do={
+#         :if ([:pick $string $i $j]~$match) do={
+#           :set matches {{$i, $j}};
+#           :set continue false;
+#         };
+#         :if ($leftbound=true) do={:set j ($j - 1);};
+#         :if ($rightbound=true) do={:set i ($i + 1);};
+#       };
+#     } else={
+#       :local i 0;
+#       :local jmin 1;
+#       :local jmax [:len $string];
+#       :local continueleft true;
+#       :while ($continueleft and ($i < $jmax)) do={
+#         :local j $jmax;
+#         :local continueright true;
+#         :while ($continueright and ($j >= $jmin)) do={
+#           :if ([:pick $string $i $j]~$match) do={
+#             :set matches ($matches, {{$i; $j}});
+#             :set jmin ($j + 1);
+#             :set continueright false;
+#           } else={
+#             :set j ($j - 1);
+#           };
+#         };
+#         :set i ($i + 1);
+#         :if (($overlap=false) and ($i < $j)) do={:set $i $j;};
+#       };
+#     };
+#   };
+#   :if ($matches=nil) do={:set matches false;};
+#   :return $matches
+# };
+
+:global haveInternet do={
+# Tests a ping connection to a list of name servers, by default
+# google (8.8.8.8 and 8.8.4.4) and cloudflare (1.1.1.1 and 1.0.0.1)
+#
+# Returns a boolean true as soon as a ping connection has been made,
+# or false if none of the servers were able to reply.
+  :local DESTINATIONS {8.8.8.8; \
+                       8.8.4.4; \
+                       1.1.1.1; \
+                       1.0.0.1};
+  :local CONNECTED false;
+  :foreach DEST in=$DESTINATIONS do={
+    :if ($CONNECTED=false) do={
+      :set CONNECTED ([/ping $DEST count=4 interval=100ms] >= 1);
+    };
+  };
+  :return $CONNECTED;
+};
+
+:global waitForInternet do={
+  :global haveInternet;
+
+  :local DELAY 2s;
+  :local DELAYMAX 60s;
+  
+  :local ATTEMPT 1;
+  :local ATTEMPTS 60;
+  
+  :local INTERNET [$haveInternet];
+  
+  :do {
+    :while ((!$INTERNET) and ($ATTEMPT < $ATTEMPTS)) do={
+      :if ($ATTEMPT=1 or $ATTEMPT=3 or $ATTEMPT=5 or $ATTEMPT=7) do={
+        :log info ("Cannot reach the internet after $ATTEMPT attempts. Retrying...")
+      };
+      :if (($ATTEMPT / 10) != (($ATTEMPT - 1) / 10)) do={
+        :log warning ("Cannot reach the internet after $ATTEMPT attempts. Retrying...")
+      };
+      :delay $DELAY;
+      :set DELAY ($DELAY * 2);
+      :if ($DELAY > $DELAYMAX) do={:set DELAY $DELAYMAX;};
+      :set ATTEMPT ($ATTEMPT + 1)
+      :set INTERNET [$haveInternet];
+    };
+  } on-error {
+    :log error ("waitForInternet - An unknown error occurred");
+  };
+  :if (!$INTERNET) do={:log error ("Cannot reach the internet.")}
+  :return $INTERNET
+};
+
+
+:global updateFreeDNS do={
+
+  :local freedns_key $1;
+  :local freedns_uri "http://freedns.afraid.org/dynamic/update.php\?";
+
+  :local DELAY 2s;
+  :local DELAYMAX 60s;
+  
+  :local ATTEMPT 1;
+  :local ATTEMPTS 25;
+  :local UPDATED false;
+  
+  :while (!$UPDATED and ( $ATTEMPT <= $ATTEMPTS )) do={
+    :do {
+      [/tool fetch mode=http url=($freedns_uri . $freedns_key) keep-result=no];
+      :set UPDATED true;
+      :log info ("FreeDNS updated with IP $[/ip address get [find interface=([/ip route check 8.8.8.8 as-value once]->"interface")] address] using $ATTEMPT attempts.");
+    } on-error={
+      :if ($ATTEMPT=1 or $ATTEMPT=3 or $ATTEMPT=5 or $ATTEMPT=7) do={
+        :log info ("Unable to update FreeDNS after $ATTEMPT attempts. Retrying...")
+      };
+      :if (($ATTEMPT / 10) != (($ATTEMPT - 1) / 10)) do={
+        :log warning ("Unable to update FreeDNS after $ATTEMPT attempts. Retrying...")
+      };
+      :set ATTEMPT ($ATTEMPT + 1);
+      :delay $DELAY;
+      :set DELAY ($DELAY * 2);
+      :if ($DELAY > $DELAYMAX) do={:set DELAY $DELAYMAX;}
+    };
+  };
+  :if (!$UPDATED) do={
+    :log error ("Permanently failed to update FreeDNS. Please update manually")
+  };
+};
